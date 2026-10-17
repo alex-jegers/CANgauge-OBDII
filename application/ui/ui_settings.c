@@ -187,14 +187,14 @@ void ui_settings_init()
 	lv_obj_add_event_cb(prv_data_logging_period_text_area, prv_text_area_clicked, LV_EVENT_SHORT_CLICKED, NULL);
 	lv_textarea_set_accepted_chars(prv_data_logging_period_text_area, "0123456789");
 
+	/* Data transfer button. */
+	prv_settings_data_trsnf_btn = ui_helpers_create_btn_with_text(prv_settings_screen, "Transfer Data", LV_FONT_DEFAULT);
+
 	/* Make the auto on/off calibration container, buttons, and labels. */
-	prv_auto_on_th_btn = ui_helpers_create_btn_with_text(prv_settings_screen, "Calibrate auto on/off", LV_FONT_DEFAULT);
+	prv_auto_on_th_btn = ui_helpers_create_btn_with_text(prv_settings_screen, "Hold to calibrate auto on/off", LV_FONT_DEFAULT);
 
 	/* Make a firmware update button. */
 	prv_settings_firmware_update_btn = ui_helpers_create_btn_with_text(prv_settings_screen, "Update Firmware", LV_FONT_DEFAULT);
-
-	/* Data transfer button. */
-	prv_settings_data_trsnf_btn = ui_helpers_create_btn_with_text(prv_settings_screen, "Transfer Data", LV_FONT_DEFAULT);
 
 	/* Restore defaults button. */
 	prv_restore_defaults_btn = ui_helpers_create_btn_with_text(prv_settings_screen, "Restore Defaults", LV_FONT_DEFAULT);
