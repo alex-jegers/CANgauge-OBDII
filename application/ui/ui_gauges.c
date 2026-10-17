@@ -8,7 +8,7 @@
 #include <math.h>
 
 /**********		DEFINES		**********/
-
+#define PRV_HIDDEN_GAUGE_TOTAL_TICKS		300
 /**********		EXTERNAL VARIABLE DEFINITIONS		**********/
 
 /**********		STATIC VARIABLES		**********/
@@ -44,6 +44,8 @@ static lv_obj_t* _gauge_needle[4];			//The lv_line that acts as the needle, set 
 static lv_obj_t* _gauge_data_lbl[4];		//The label on the gauge face that displays the number on the gauge.
 static lv_obj_t* _gauge_info_lbl[4];		//Label that tells the user about what data is being displayed.
 static lv_obj_t* gauge_units_lbl[4];
+static float prv_gauge_min[4];			//To replace the scaling factor with map().
+static float prv_gauge_max[4];			//To replace the scaling factor with map().
 static float _gauge_scaling_factor[4];	//How the value is multiplied by when decimals are needed.
 static void (*prv_gauge_single_clicked_cb)(lv_event_t* e) = NULL;
 static void (*prv_gauge_long_pressed_cb)(lv_event_t* e) = NULL;
@@ -62,8 +64,9 @@ static void prv_activate_all_checkboxes();
 static void prv_clear_all_checkboxes();						//Clears the checked state of all boxes, activates them, and nullifys the checkboxes array.
 static uint8_t prv_add_checked_checkbox(lv_obj_t* cb);		//Adds a checkbox to the checkboxes array, returns the number of checkboxes in the array.
 static uint8_t prv_remove_checked_checkbox(lv_obj_t* cb);	//Removes a checkbox from the list of checked checkboxes, returns the number of boxes in the array.
-
+static int32_t prv_round_i(int32_t val, int32_t nearest);	//Rounds val to the nearest 5, 10 ,100, etc.
 static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lbl, const char* secondary_lbl, uint8_t gauge_idx);
+static void _load_gauge_old(int32_t min_val, int32_t max_val, const char* primary_lbl, const char* secondary_lbl, uint8_t gauge_idx);
 
 
 /**********		STATIC FUNCTION DEFINITIONS		**********/
@@ -270,12 +273,41 @@ static uint8_t prv_remove_checked_checkbox(lv_obj_t* cb)
 	return counter;
 }
 
+static int32_t prv_round_i(int32_t val, int32_t nearest)
+{
+	int32_t x = nearest / 2;
+	if (val > 0) { val = (val + x) / nearest * nearest; }
+	else { val = ((val - x) / nearest) * nearest; }
+	return val;
+}
+
 static void prv_gauge_pressed_hanlder(lv_event_t* e)
 {
 	lv_event_code_t event_code = lv_event_get_code(e);
 	if (event_code == LV_EVENT_SINGLE_CLICKED)
 	{
 		ui_gauges_load();
+		for (uint8_t x = 0; x < 4; x++)
+		{
+			if (_gauge[x] == NULL)
+			{
+				break;
+			}
+			char** tick_label_str_list = lv_obj_get_user_data(_gauge[x]);
+			for (uint8_t i = 0; i < 16; i++)
+			{
+				char* string = tick_label_str_list[i];
+				if (string == NULL)
+				{
+					free(tick_label_str_list);
+					break;
+				}
+				free(string);
+				tick_label_str_list[i] = NULL;
+			}
+		}
+
+		
 		lv_obj_clean(_gauge_scr);
 		_gauge[0] = NULL;
 		_gauge[1] = NULL;
@@ -316,6 +348,320 @@ static void _gauge_anim_map(void* obj, int32_t val)
 }
 
 static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lbl, const char* secondary_lbl, uint8_t gauge_idx)
+{
+	if (gauge_idx >= prv_num_gauges) { return; }
+
+	lv_obj_set_scrollbar_mode(_gauge_scr, LV_SCROLLBAR_MODE_OFF);
+	lv_obj_remove_flag(_gauge_scr, LV_OBJ_FLAG_SCROLLABLE);
+
+	/* Look up tables for formatting -> [How many gauges total][current gauge index]. */
+	const int32_t span_lut[4][4] = {
+		{270, 0, 0, 0 },
+		{154, 154, 0, 0 },
+		{100, 100, 100, 0 },
+		{60, 60, 60, 60 } };
+
+	const int32_t start_lut[4][4] = { {135, 0, 0, 0,},
+		{103, 283, 0, 0},
+		{220, 100, -20, 0 },
+		{195, 285, 105, 15 } };
+
+
+	
+	/* Figure out our range. */
+	const float major_tick_steps_lut[] = {0.2, 0.25, 0.5, 1, 5, 10, 20, 50, 100, 500, 1000, 5000, 10000, 100000};
+	const uint8_t num_major_ticks_lut[4] = { 9, 5, 3, 3 };
+	const uint8_t total_visible_ticks_lut[4] = { 17, 9, 3, 3 };
+	
+	/* Round the min val to the nearest 5. */
+	int32_t range = max_val - min_val;
+	if (range < 0)
+	{
+		int32_t min_val_temp = min_val;
+		min_val = max_val;
+		max_val = min_val_temp;
+	}
+	uint32_t rounding_factor = 5;
+	if (abs(range) >= 500) { rounding_factor = 1000; }
+	else if (abs(range) >= 100) { rounding_factor = 100; }
+	else if (abs(range) >= 50) { rounding_factor = 10; }
+	min_val = prv_round_i(min_val, rounding_factor);
+	float min_val_f = (float)min_val;
+	float max_val_f = (float)max_val;
+
+	/* Create the functional gauge and make it invisible. */
+	uint32_t span = span_lut[prv_num_gauges - 1][gauge_idx];
+	uint32_t start = start_lut[prv_num_gauges - 1][gauge_idx];
+	_gauge[gauge_idx] = ui_helpers_create_gauge(_gauge_scr, PRV_HIDDEN_GAUGE_TOTAL_TICKS, 20, span, start, &_gauge_needle[gauge_idx]);
+	lv_obj_set_style_arc_width(_gauge[gauge_idx], 0, LV_PART_MAIN);
+	lv_obj_set_style_line_width(_gauge[gauge_idx], 0, LV_PART_INDICATOR);
+	lv_obj_set_style_line_width(_gauge[gauge_idx], 0, LV_PART_ITEMS);
+	lv_scale_set_label_show(_gauge[gauge_idx], false);
+
+	/*** VISIBLE GAUGE ***/
+	uint8_t num_major_ticks = num_major_ticks_lut[prv_num_gauges - 1];
+	uint8_t num_visible_ticks = total_visible_ticks_lut[prv_num_gauges - 1];
+	uint8_t major_tick_interval = num_visible_ticks / num_major_ticks;
+	if (num_visible_ticks % num_major_ticks != 0) { major_tick_interval++; }
+	lv_obj_t* visible_gauge = ui_helpers_create_gauge(_gauge_scr, num_visible_ticks, major_tick_interval, span, start, NULL);
+	//lv_obj_set_style_arc_width(visible_gauge, 0, LV_PART_MAIN);
+	//lv_obj_set_style_line_width(visible_gauge, 0, LV_PART_INDICATOR);
+	//lv_obj_set_style_line_width(visible_gauge, 0, LV_PART_ITEMS);
+	//lv_scale_set_label_show(visible_gauge, false);
+
+
+	/* Figure out how much to increment each major tick mark by. */
+
+	float max_tick_val = min_val_f + (major_tick_steps_lut[0] * num_major_ticks);
+	float tick_inc = major_tick_steps_lut[0];
+	for (uint8_t i = 1; i < sizeof(major_tick_steps_lut) / sizeof(float); i++)
+	{
+		float next_max = min_val_f + (major_tick_steps_lut[i] * (num_major_ticks - 1));
+		float last_diff = fabsf(max_tick_val - max_val_f);
+		float next_diff = fabsf(next_max - max_val_f);
+		if (next_diff < last_diff) { tick_inc = major_tick_steps_lut[i]; }
+	}
+
+	/* Create the list of tick labels and set the new max value. */
+	uint8_t string_list_length = num_major_ticks + 1;	//Plus 1 for the NULL terminator
+	uint32_t string_list_size = string_list_length * sizeof(char*);
+	char** string_list = malloc(string_list_size);		//The list that holds the strings.
+	lv_memset(string_list, 0, string_list_size);
+	lv_obj_set_user_data(_gauge[gauge_idx], string_list);
+	for (uint8_t x = 0; x < string_list_length - 1; x++)
+	{
+		const uint8_t tick_label_size = 10;
+		char* tick_label = (char*)malloc(tick_label_size);	//Make some memory for the actual label.
+		float label_value = min_val_f + ((float)x * tick_inc);
+		max_val_f = label_value;									//On the last iteration of the loop this will store what the actual visible gauges' max value is.
+		if (tick_inc < 1)
+		{
+			snprintf(tick_label, tick_label_size, "%.2f", label_value);
+			string_list[x] = tick_label;
+			continue;
+		}
+		if (tick_inc >= 1000)
+		{
+			label_value /= 1000;
+			snprintf(tick_label, tick_label_size, "%.1fk", label_value);
+			string_list[x] = tick_label;
+			continue;
+		}
+		/* If it made it to this point the tick inc is between 1 and 999. */
+		if (label_value >= 1000)
+		{
+			label_value /= 1000;
+			snprintf(tick_label, tick_label_size, "%.2fk", label_value);
+			string_list[x] = tick_label;
+			continue;
+		}
+		/* The default for tick inc between 1 and 999 and a value less than 1000. */
+		snprintf(tick_label, tick_label_size, "%.0f", label_value);
+		string_list[x] = tick_label;
+
+	}
+	/* If the gauge is counter clockwise we need to reverse the string list. */
+	if (range < 0)
+	{
+		for (uint8_t i = 0; i < string_list_length / 2; i++) {
+			char* tmp = string_list[i];
+			string_list[i] = string_list[string_list_length - 2 - i];
+			string_list[string_list_length - 2 - i] = tmp;
+		}
+		prv_gauge_min[gauge_idx] = max_val_f;
+		prv_gauge_max[gauge_idx] = min_val_f;
+	}
+	else
+	{
+		prv_gauge_min[gauge_idx] = min_val_f;
+		prv_gauge_max[gauge_idx] = max_val_f;
+	}
+	lv_scale_set_text_src(visible_gauge, (const char**)string_list);
+
+	
+	/* Data label is the label that actually displays the value of the data. */
+	const int32_t data_lbl_pos_y_lut[4][4] = {
+		{0, 0, 0, 0 },
+		{0, 0, 0, 0 },
+		{-65, 20, 20, 0 },
+		{-65, -65, 65, 65 } };
+
+	const int32_t data_lbl_pos_x_lut[4][4] = {
+		{0, 0, 0, 0 },
+		{-75, 75, 0, 0 },
+		{0, -80, 80, 0 },
+		{-60, 60, -60, 60 } };
+
+	const lv_font_t* data_lbl_font_lut[4] = {
+		&lv_font_montserrat_42,
+		&lv_font_montserrat_42,
+		&lv_font_montserrat_42,
+		&lv_font_montserrat_34 };
+
+	int32_t data_lbl_pos_x = data_lbl_pos_x_lut[prv_num_gauges - 1][gauge_idx];
+	int32_t data_lbl_pos_y = data_lbl_pos_y_lut[prv_num_gauges - 1][gauge_idx];
+	lv_font_t* data_font = data_lbl_font_lut[prv_num_gauges - 1];
+	_gauge_data_lbl[gauge_idx] = lv_label_create(_gauge_scr);
+	lv_obj_align(_gauge_data_lbl[gauge_idx], LV_ALIGN_CENTER, data_lbl_pos_x, data_lbl_pos_y);
+	lv_label_set_text(_gauge_data_lbl[gauge_idx], "");
+	lv_obj_set_style_text_font(_gauge_data_lbl[gauge_idx], data_font, LV_PART_MAIN);
+	lv_obj_set_style_text_color(_gauge_data_lbl[gauge_idx], UI_COLOR_WHITE, LV_PART_MAIN);
+	lv_obj_set_style_text_align(_gauge_data_lbl[gauge_idx], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+
+	/* Desc label describes what's being displayed (i.e. Boost Pressure, Coolant Temp, etc. */
+	const int32_t desc_lbl_pos_x_lut[4][4] = {
+		{0, 0, 0, 0 },
+		{-216, 216, 0, 0 },
+		{0, -190, 190, 0 },
+		{-155, 155, -155, 155 } };
+
+	const int32_t desc_lbl_pos_y_lut[4][4] = {
+		{216, 0, 0, 0 },
+		{0, 0, 0, 0 },
+		{-220, 110, 110, 0 },
+		{-155, -155, 155, 155 } };
+
+	const int32_t desc_lbl_angle_start_lut[4][4] = {
+		{270, 0, 0, 0 },
+		{0, 180, 0, 0 },
+		{90, 330, 210, 0 },
+		{45, 135, -45, -135 } };
+
+	const int8_t desc_lbl_letter_spacing_lut[4] = { 4, 4, 4, 0 };
+
+	const lv_arclabel_dir_t desc_lbl_direction_lut[4][4] = {
+		{LV_ARCLABEL_DIR_COUNTER_CLOCKWISE, 0, 0, 0 },
+		{LV_ARCLABEL_DIR_COUNTER_CLOCKWISE, LV_ARCLABEL_DIR_COUNTER_CLOCKWISE, 0, 0 },
+		{LV_ARCLABEL_DIR_CLOCKWISE, LV_ARCLABEL_DIR_COUNTER_CLOCKWISE, LV_ARCLABEL_DIR_COUNTER_CLOCKWISE, 0 },
+		{LV_ARCLABEL_DIR_CLOCKWISE, LV_ARCLABEL_DIR_CLOCKWISE, LV_ARCLABEL_DIR_COUNTER_CLOCKWISE, LV_ARCLABEL_DIR_COUNTER_CLOCKWISE } };
+
+	const int32_t desc_lbl_width = 400;
+	const int32_t desc_lbl_height = 400;
+	const int32_t desc_lbl_radius = 240;
+	uint8_t desc_lbl_letter_spacing = desc_lbl_letter_spacing_lut[prv_num_gauges - 1];
+	int32_t desc_lbl_pos_x = desc_lbl_pos_x_lut[prv_num_gauges - 1][gauge_idx];
+	int32_t desc_lbl_pos_y = desc_lbl_pos_y_lut[prv_num_gauges - 1][gauge_idx];
+	int32_t desc_lbl_angle_start = desc_lbl_angle_start_lut[prv_num_gauges - 1][gauge_idx];
+	lv_arclabel_dir_t desc_lbl_direction = desc_lbl_direction_lut[prv_num_gauges - 1][gauge_idx];
+
+	_gauge_info_lbl[gauge_idx] = lv_arclabel_create(_gauge_scr);
+	lv_obj_set_size(_gauge_info_lbl[gauge_idx], desc_lbl_width, desc_lbl_height);
+	lv_obj_align(_gauge_info_lbl[gauge_idx], LV_ALIGN_CENTER, desc_lbl_pos_x, desc_lbl_pos_y);
+	lv_obj_set_style_text_letter_space(_gauge_info_lbl[gauge_idx], desc_lbl_letter_spacing, LV_PART_MAIN);
+	lv_obj_set_style_text_color(_gauge_info_lbl[gauge_idx], UI_COLOR_WHITE, LV_PART_MAIN);
+	lv_arclabel_set_text(_gauge_info_lbl[gauge_idx], primary_lbl);
+	float offset_y = sin((float)((float)desc_lbl_angle_start * 3.14 / 180.0));
+	float offset_x = cos((float)((float)desc_lbl_angle_start * 3.14 / 180.0));
+	lv_arclabel_set_center_offset_y(_gauge_info_lbl[gauge_idx], desc_lbl_radius * offset_y);
+	lv_arclabel_set_center_offset_x(_gauge_info_lbl[gauge_idx], desc_lbl_radius * offset_x);
+	lv_arclabel_set_angle_start(_gauge_info_lbl[gauge_idx], desc_lbl_angle_start);
+	lv_arclabel_set_radius(_gauge_info_lbl[gauge_idx], desc_lbl_radius);
+	lv_arclabel_set_text_vertical_align(_gauge_info_lbl[gauge_idx], LV_ARCLABEL_TEXT_ALIGN_CENTER);
+	lv_arclabel_set_text_horizontal_align(_gauge_info_lbl[gauge_idx], LV_ARCLABEL_TEXT_ALIGN_CENTER);
+	lv_arclabel_set_dir(_gauge_info_lbl[gauge_idx], desc_lbl_direction);
+	lv_obj_set_style_text_font(_gauge_info_lbl[gauge_idx], &lv_font_montserrat_24, LV_PART_MAIN);
+	lv_obj_move_foreground(_gauge_info_lbl[gauge_idx]);
+
+	/* Make the label that displays the units. */
+	gauge_units_lbl[gauge_idx] = lv_label_create(_gauge_scr);
+	int32_t units_lbl_pos_y = data_lbl_pos_y + 30;
+	int32_t units_lbl_pos_x = data_lbl_pos_x;
+
+	lv_label_set_text(gauge_units_lbl[gauge_idx], secondary_lbl);
+	lv_obj_set_style_text_font(gauge_units_lbl[gauge_idx], &lv_font_montserrat_20, LV_PART_MAIN);
+	lv_obj_set_style_text_color(gauge_units_lbl[gauge_idx], UI_COLOR_WHITE, LV_PART_MAIN);
+	lv_obj_set_style_text_align(gauge_units_lbl[gauge_idx], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+	lv_obj_align(gauge_units_lbl[gauge_idx], LV_ALIGN_CENTER, units_lbl_pos_x, units_lbl_pos_y);
+
+	/* Do this if were on the last gauge to be loaded in. */
+	if (gauge_idx == prv_num_gauges - 1)
+	{
+		/* Cicle in the middle to cover up the needle line. */
+		lv_obj_t* circle = lv_obj_create(_gauge_scr);
+		lv_obj_set_size(circle, 240, 240);
+		lv_obj_center(circle);
+		lv_obj_set_style_radius(circle, LV_RADIUS_CIRCLE, 0);
+		lv_obj_set_style_bg_color(circle, UI_COLOR_BLACK, 0);
+		lv_obj_set_style_bg_opa(circle, LV_OPA_COVER, 0);
+		lv_obj_set_style_border_width(circle, 0, LV_PART_MAIN);
+		/* Move all the labels in front. */
+		for (uint8_t x = 0; x < prv_num_gauges; x++)
+		{
+			lv_obj_move_foreground(_gauge_info_lbl[x]);
+			lv_obj_move_foreground(_gauge_data_lbl[x]);
+			lv_obj_move_foreground(gauge_units_lbl[x]);
+		}
+
+		/* Draw a line or 2 to divide the gauges. */
+		if (prv_num_gauges == 2 || prv_num_gauges == 4)
+		{
+
+			lv_obj_t* divider_line = lv_obj_create(_gauge_scr);
+			lv_obj_set_size(divider_line, 7, 400);
+			lv_obj_set_style_bg_color(divider_line, UI_COLOR_GRAY, LV_PART_MAIN);
+			lv_obj_set_style_border_color(divider_line, UI_COLOR_GRAY, LV_PART_MAIN);
+			lv_obj_center(divider_line);
+		}
+		if (prv_num_gauges == 4)
+		{
+
+			lv_obj_t* divider_line = lv_obj_create(_gauge_scr);
+			lv_obj_set_size(divider_line, 400, 7);
+			lv_obj_set_style_bg_color(divider_line, UI_COLOR_GRAY, LV_PART_MAIN);
+			lv_obj_set_style_border_color(divider_line, UI_COLOR_GRAY, LV_PART_MAIN);
+			lv_obj_center(divider_line);
+		}
+		if (prv_num_gauges == 3)
+		{
+			/*Create an array for the points of the line*/
+			static lv_point_precise_t line_points1[] = { {0, 200}, {0, 0} };
+			static lv_point_precise_t line_points2[] = { {0, 0}, {173, 100}, {346, 0} };
+
+			/*Create style*/
+			static lv_style_t style_line;
+			lv_style_init(&style_line);
+			lv_style_set_line_width(&style_line, 7);
+			lv_style_set_line_color(&style_line, UI_COLOR_GRAY);
+			lv_style_set_line_rounded(&style_line, true);
+
+			/*Create a line and apply the new style*/
+			lv_obj_t* line1;
+			lv_obj_t* line2;
+			line1 = lv_line_create(_gauge_scr);
+			line2 = lv_line_create(_gauge_scr);
+			//lv_obj_set_size(line1, 400, 400);
+			//lv_obj_set_size(line2, 400, 400);
+			lv_line_set_points(line1, line_points1, 2);     /*Set the points*/
+			lv_line_set_points(line2, line_points2, 3);     /*Set the points*/
+			lv_obj_add_style(line1, &style_line, 0);
+			lv_obj_add_style(line2, &style_line, 0);
+			lv_obj_align(line1, LV_ALIGN_CENTER, 0, 100);
+			lv_obj_align(line2, LV_ALIGN_CENTER, 0, -50);
+			lv_obj_move_foreground(line1);
+			lv_obj_move_foreground(line2);
+		}
+	}
+
+	/* Apply the event callback to all the children of _gauge_scr so
+	when anything on the screen is pressed it will fire the event and we can
+	close the gauge screen. */
+	lv_obj_add_event_cb(_gauge_scr, prv_gauge_pressed_hanlder, LV_EVENT_SINGLE_CLICKED, NULL);
+	lv_obj_add_event_cb(_gauge_scr, prv_gauge_pressed_hanlder, LV_EVENT_LONG_PRESSED, NULL);
+	for (uint32_t child = 0;; child++)
+	{
+		lv_obj_t* obj = lv_obj_get_child(_gauge_scr, child);
+		if (obj == NULL)
+		{
+			break;
+		}
+		lv_obj_add_event_cb(obj, prv_gauge_pressed_hanlder, LV_EVENT_SINGLE_CLICKED, NULL);
+		lv_obj_add_event_cb(obj, prv_gauge_pressed_hanlder, LV_EVENT_LONG_PRESSED, NULL);
+	}
+
+}
+
+static void _load_gauge_old(int32_t min_val, int32_t max_val, const char* primary_lbl, const char* secondary_lbl, uint8_t gauge_idx)
 {
 	lv_obj_set_scrollbar_mode(_gauge_scr, LV_SCROLLBAR_MODE_OFF);
 	lv_obj_remove_flag(_gauge_scr, LV_OBJ_FLAG_SCROLLABLE);
@@ -370,7 +716,7 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 	 * creating right now.
 	 */
 	uint32_t span = 0;
-	uint32_t start = 0;
+	int32_t start = 0;
 	switch (prv_num_gauges) {
 		/* If there's only one gauge we dont need to check the index.*/
 		case 1:
@@ -413,8 +759,8 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 	with the values that were given. */
 	if ((uint32_t)_gauge_scaling_factor[gauge_idx] > 1)
 	{
-		lv_obj_t* visible_gauge = ui_helpers_create_gauge(_gauge_scr, og_min, og_max, span, start, NULL);
-		_gauge[gauge_idx] = ui_helpers_create_gauge(_gauge_scr, min_val, max_val, span, start, &_gauge_needle[gauge_idx]);
+		lv_obj_t* visible_gauge = ui_helpers_create_gauge_old(_gauge_scr, og_min, og_max, span, start, NULL);
+		_gauge[gauge_idx] = ui_helpers_create_gauge_old(_gauge_scr, min_val, max_val, span, start, &_gauge_needle[gauge_idx]);
 		lv_obj_set_style_arc_width(_gauge[gauge_idx], 0, LV_PART_MAIN);
 		lv_obj_set_style_line_width(_gauge[gauge_idx], 0, LV_PART_INDICATOR);
 		lv_obj_set_style_line_width(_gauge[gauge_idx], 0, LV_PART_ITEMS);
@@ -422,7 +768,7 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 	}
 	else
 	{
-		_gauge[gauge_idx] = ui_helpers_create_gauge(_gauge_scr, min_val, max_val, span, start, &_gauge_needle[gauge_idx]);
+		_gauge[gauge_idx] = ui_helpers_create_gauge_old(_gauge_scr, min_val, max_val, span, start, &_gauge_needle[gauge_idx]);
 	}
 
 	/* Make the label that shows the data. */
@@ -590,12 +936,12 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 	/* Do this if were on the last gauge to be loaded in. */
 	if (gauge_idx == prv_num_gauges - 1)
 	{
-
+		/* Cicle in the middle to cover up the needle line. */
 		lv_obj_t* circle = lv_obj_create(_gauge_scr);
 		lv_obj_set_size(circle, 250, 250);
 		lv_obj_center(circle);
 		lv_obj_set_style_radius(circle, LV_RADIUS_CIRCLE, 0);
-		lv_obj_set_style_bg_color(circle, lv_obj_get_style_bg_color(lv_screen_active(), LV_PART_MAIN), 0);
+		lv_obj_set_style_bg_color(circle, UI_COLOR_BLACK, 0);
 		lv_obj_set_style_bg_opa(circle, LV_OPA_COVER, 0);
 		lv_obj_set_style_border_width(circle, 0, LV_PART_MAIN);
 		/* Move all the labels in front. */
@@ -802,9 +1148,9 @@ void ui_gauges_set_gauge_value(float val, uint8_t idx)
 	{
 		return;
 	}
-
-	lv_scale_set_line_needle_value(_gauge[idx], _gauge_needle[idx], 200, (int32_t)(val * _gauge_scaling_factor[idx]));
-	if ((uint32_t)_gauge_scaling_factor[idx] == 100)
+	float mapped_val = (val - prv_gauge_min[idx]) * (PRV_HIDDEN_GAUGE_TOTAL_TICKS - 0) / (prv_gauge_max[idx] - prv_gauge_min[idx]) + 0;
+	lv_scale_set_line_needle_value(_gauge[idx], _gauge_needle[idx], 200, (int32_t)roundf(mapped_val));
+	if (abs(prv_gauge_max[idx] - prv_gauge_min[idx]) < 10)
 	{
 		lv_label_set_text_fmt(_gauge_data_lbl[idx], "%.2f", val);
 	}
