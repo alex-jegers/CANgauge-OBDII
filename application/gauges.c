@@ -301,13 +301,32 @@ static uint8_t prv_load_gauges(char* str[4], uint8_t num_gauges)
 			 * This was already checked if it's nested but whatevuh. */
 			if (strcmp(x->name, txt) == 0) {
 				/* For gauges on the right side of the screen we want to swap the min and max values. */
-				if ((g % 2) != 0) {
-					ui_gauges_create_gauge(txt, x->units, x->max, x->min, g);
-				} else {
-					ui_gauges_create_gauge(txt, x->units, x->min, x->max, g);
+				if ((g % 2) != 0)
+				{
+					if ((num_gauges == 3) && (g == 1))
+					{
+						ui_gauges_create_gauge(txt, x->units, x->min, x->max, g);
+					}
+					else
+					{
+						ui_gauges_create_gauge(txt, x->units, x->max, x->min, g);
+					}
+
+				}
+				else
+				{
+					if ((num_gauges == 3) && (g == 2))
+					{
+						ui_gauges_create_gauge(txt, x->units, x->max, x->min, g);
+					}
+					else
+					{
+						ui_gauges_create_gauge(txt, x->units, x->min, x->max, g);
+					}
 				}
 				active_param[g] = x;	//active_param tells the gauges task what's currently being displayed so it can process data.
 				rtn_val++;
+				break;
 			}
 		}
 	}
