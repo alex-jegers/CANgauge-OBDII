@@ -412,12 +412,13 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 
 	/* Figure out how much to increment each major tick mark by. */
 
-	float max_tick_val = min_val_f + (major_tick_steps_lut[0] * num_major_ticks);
+	float last_max = min_val_f + (major_tick_steps_lut[0] * num_major_ticks);
 	float tick_inc = major_tick_steps_lut[0];
 	for (uint8_t i = 1; i < sizeof(major_tick_steps_lut) / sizeof(float); i++)
 	{
 		float next_max = min_val_f + (major_tick_steps_lut[i] * (num_major_ticks - 1));
-		float last_diff = fabsf(max_tick_val - max_val_f);
+		last_max = min_val_f + (tick_inc * (num_major_ticks - 1));
+		float last_diff = fabsf(last_max - max_val_f);
 		float next_diff = fabsf(next_max - max_val_f);
 		if (next_diff < last_diff) { tick_inc = major_tick_steps_lut[i]; }
 	}
