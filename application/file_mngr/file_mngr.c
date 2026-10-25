@@ -426,6 +426,7 @@ uint32_t file_mngr_get_config_data(const char* data_to_get, char* data_buf)
 	res = f_open(&config_file, FILE_MNGR_CONFIG_FILE_PATH, FA_READ | FA_WRITE);
 	if (res == FR_OK) //The file exists.
 	{
+		/* TODO: This function will timeout if the config file is corrupt. */
 		char* line = calloc(250, 1);
 		char* line_copy = calloc(250, 1);
 		while (f_eof(&config_file) == 0)
@@ -438,7 +439,11 @@ uint32_t file_mngr_get_config_data(const char* data_to_get, char* data_buf)
 			char* split;		//Hold the strings from the config file.
 			char* sv_ptr;		//For strtok_r.
 			split = strtok_r(line_copy, ",", &sv_ptr);
-
+			if (strlen(line) == 0)
+			{
+				rtn_val = 0;
+				break;
+			}
 			/* Check if it's a match. */
 			if (strcmp(split, data_to_get) == 0)
 			{
