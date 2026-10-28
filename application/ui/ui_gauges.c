@@ -1152,15 +1152,18 @@ void ui_gauges_set_gauge_value(float val, uint8_t idx)
 	}
 	float mapped_val = (val - prv_gauge_min[idx]) * (PRV_HIDDEN_GAUGE_TOTAL_TICKS - 0) / (prv_gauge_max[idx] - prv_gauge_min[idx]) + 0;
 	lv_scale_set_line_needle_value(_gauge[idx], _gauge_needle[idx], 200, (int32_t)roundf(mapped_val));
-	if (abs(prv_gauge_max[idx] - prv_gauge_min[idx]) < 10)
+	if (val < 10)
 	{
 		lv_label_set_text_fmt(_gauge_data_lbl[idx], "%.2f", val);
+		return;
 	}
-	else
+	if (val < 100)
 	{
 		lv_label_set_text_fmt(_gauge_data_lbl[idx], "%.1f", val);
+		return;
 	}
-
+	lv_label_set_text_fmt(_gauge_data_lbl[idx], "%.0f", val);
+	return;
 }
 
 void ui_gauges_create_gauge_checkbox(const char* name)
