@@ -369,7 +369,7 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 
 	
 	/* Figure out our range. */
-	const float major_tick_steps_lut[] = {0.2, 0.25, 0.5, 1, 5, 10, 20, 50, 100, 500, 1000, 5000, 10000, 100000};
+	const float major_tick_steps_lut[] = {0.2, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 100000};
 	const uint8_t num_major_ticks_lut[4] = { 9, 5, 3, 3 };
 	const uint8_t total_visible_ticks_lut[4] = { 17, 9, 3, 3 };
 	
