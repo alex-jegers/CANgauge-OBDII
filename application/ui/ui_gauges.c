@@ -592,6 +592,7 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 			lv_obj_move_foreground(_gauge_info_lbl[x]);
 			lv_obj_move_foreground(_gauge_data_lbl[x]);
 			lv_obj_move_foreground(gauge_units_lbl[x]);
+			lv_obj_move_background(_gauge[x]);
 		}
 
 		/* Draw a line or 2 to divide the gauges. */
