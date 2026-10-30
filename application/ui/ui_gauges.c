@@ -404,6 +404,7 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 	uint8_t major_tick_interval = num_visible_ticks / num_major_ticks;
 	if (num_visible_ticks % num_major_ticks != 0) { major_tick_interval++; }
 	lv_obj_t* visible_gauge = ui_helpers_create_gauge(_gauge_scr, num_visible_ticks, major_tick_interval, span, start, NULL);
+	lv_obj_move_background(visible_gauge);
 	//lv_obj_set_style_arc_width(visible_gauge, 0, LV_PART_MAIN);
 	//lv_obj_set_style_line_width(visible_gauge, 0, LV_PART_INDICATOR);
 	//lv_obj_set_style_line_width(visible_gauge, 0, LV_PART_ITEMS);
@@ -592,7 +593,6 @@ static void _load_gauge(int32_t min_val, int32_t max_val, const char* primary_lb
 			lv_obj_move_foreground(_gauge_info_lbl[x]);
 			lv_obj_move_foreground(_gauge_data_lbl[x]);
 			lv_obj_move_foreground(gauge_units_lbl[x]);
-			lv_obj_move_background(_gauge[x]);
 		}
 
 		/* Draw a line or 2 to divide the gauges. */
