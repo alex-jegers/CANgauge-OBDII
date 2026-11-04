@@ -71,6 +71,8 @@ static void prv_cg_obd_init_task(void* args)
 		if (file_mngr_create_default_config_file() != FR_OK)
 		{
 			//EEPROM error.
+			sys_mem_create_eeprom_fs();
+			file_mngr_create_default_config_file();
 		}
 	}
 
