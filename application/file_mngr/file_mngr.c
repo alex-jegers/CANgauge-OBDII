@@ -543,7 +543,7 @@ FRESULT file_mngr_create_default_config_file()
 									"PRESSURE UNITS,kPa,\n"
 									"TEMPERATURE UNITS,C,\n"
 									"SPEED UNITS,kph,\n"
-									"TORQUE UNITS,Nm\n"
+									"TORQUE UNITS,Nm,\n"
 									"DATA LOG RATE,100,\n"
 									"ON THRESHOLD VOLTS, 13.34,\n"
 									"OFF THRESHOLD VOLTS, 12.33,\n";
